@@ -39,8 +39,13 @@ android {
     }
 }
 
+repositories {
+    flatDir { dirs 'libs' }        // ← para resolver o .aar local
+}
+
 dependencies {
 
+    implementation files('libs/facetec-sdk-10.0.9.aar')
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
