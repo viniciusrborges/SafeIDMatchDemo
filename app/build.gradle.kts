@@ -39,13 +39,19 @@ android {
     }
 }
 
-repositories {
-    flatDir { dirs 'libs' }        // ← para resolver o .aar local
-}
-
 dependencies {
+    // AAR local
+    implementation(files("libs/facetec-sdk-10.0.9.aar"))
 
-    implementation files('libs/facetec-sdk-10.0.9.aar')
+    // *** Necessário para Theme.AppCompat ***
+    implementation("androidx.appcompat:appcompat:1.6.1")
+    implementation("com.google.android.material:material:1.12.0")
+
+    // Rede / JSON (iguais ao sample)
+    implementation("com.squareup.okhttp3:okhttp:3.12.13")
+    implementation("com.squareup.okio:okio:1.15.0")
+    implementation("com.google.code.gson:gson:2.10")
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
