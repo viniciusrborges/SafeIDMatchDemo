@@ -19,9 +19,10 @@ import kotlinx.coroutines.withContext
 import net.sf.scuba.smartcards.IsoDepCardService
 import org.jmrtd.BACKey
 import org.jmrtd.PassportService
-import org.jmrtd.lds.DG1File
+import org.jmrtd.lds.icao.DG1File
 import java.io.InputStream
 
+@OptIn(ExperimentalMaterial3Api::class)
 class PassportNfcActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
 
     private var nfcAdapter: NfcAdapter? = null
