@@ -18,6 +18,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.safeweb.matchdemo.ui.theme.SafeIDMatchDemoTheme
 
+// >>> imports que estavam faltando <<<
+import com.facetec.sdk.FaceTecSDK
+import com.safeweb.matchdemo.SessionRequestProcessor
+import com.safeweb.matchdemo.Config
+
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -25,18 +30,21 @@ class MainActivity : ComponentActivity() {
 
         ensureCameraPermission()
 
+        // (Opcional mas recomendado) aplica a customização vinda do Config
+        FaceTecSDK.setCustomization(Config.retrieveConfigurationWizardCustomization())
+
         setContent {
             SafeIDMatchDemoTheme {
                 MatchScreen(
                     onMatchClick = {
-                        // por enquanto só pra validar
+                        // Feedback rápido
                         Toast.makeText(this, "Match Face to ID (clicado)", Toast.LENGTH_SHORT).show()
 
-                        // DEPOIS: quando copiarmos os arquivos da FaceTec
-                        // FaceTecSDK.getInstance().start3DLivenessThen3D2DPhotoIDMatch(
-                        //     this@MainActivity,
-                        //     SessionRequestProcessor()
-                        // )
+                        // Dispara o fluxo Match Face to ID (UI do FaceTec + networking via SessionRequestProcessor)
+                        FaceTecSDK.getInstance().start3DLivenessThen3D2DPhotoIDMatch(
+                            this@MainActivity,
+                            SessionRequestProcessor()
+                        )
                     }
                 )
             }
