@@ -3,7 +3,6 @@ package com.safeweb.matchdemo.net;
 import java.util.concurrent.TimeUnit;
 import okhttp3.OkHttpClient;
 
-/** Cliente OkHttp com timeouts — igual ao sample, mas minimal. */
 public final class SampleAppNetworkingLibExample {
     private static volatile OkHttpClient apiClient;
 

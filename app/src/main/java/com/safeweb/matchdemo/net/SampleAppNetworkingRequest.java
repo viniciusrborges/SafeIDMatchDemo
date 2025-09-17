@@ -18,7 +18,6 @@ import okhttp3.Response;
 import okhttp3.Call;
 import okhttp3.Callback;
 
-/** Envia o requestBlob para o endpoint (Testing API) e retorna o responseBlob. */
 public final class SampleAppNetworkingRequest {
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 

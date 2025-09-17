@@ -8,7 +8,6 @@ import okio.BufferedSink;
 import okio.ForwardingSink;
 import okio.Okio;
 
-/** Wrapper para reportar progresso de upload (igual ao sample). */
 public final class ProgressRequestBody extends RequestBody {
     public interface Listener { void onUploadProgressChanged(long bytesWritten, long totalBytes); }
 
