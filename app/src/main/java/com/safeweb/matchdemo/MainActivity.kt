@@ -1,12 +1,14 @@
 package com.safeweb.matchdemo
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Button
 import androidx.compose.material3.Scaffold
@@ -14,65 +16,65 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
-import com.facetec.sdk.FaceTecSDK
+import androidx.compose.ui.unit.dp
 import com.safeweb.matchdemo.ui.theme.SafeIDMatchDemoTheme
 
 class MainActivity : ComponentActivity() {
-    private var sdkInstance: FaceTecSDK? = null
+
+    // --- FaceTec: usamos a sua função existente (substitua aqui pelo que você já tinha) ---
+    private fun startMatchFaceToID() {
+        // Se você já tinha a versão com reflexão, chame ela daqui; exemplo:
+        // startMatchFaceTecWithReflection()
+        Toast.makeText(this, "Match Face to ID disparado", Toast.LENGTH_SHORT).show()
+        // TODO: troque pelo seu disparo real:
+        // sdkInstance?.start3DLivenessThen3D2DPhotoIDMatch(this, SessionRequestProcessor())
+    }
+
+    private fun ensureCameraPermission(): Boolean {
+        val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
+                PackageManager.PERMISSION_GRANTED
+        if (!granted) ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), 1001)
+        return granted
+    }
+    // ---------------------------------------------------------------------
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // (opcional) customização visual
-        FaceTecSDK.setCustomization(Config.retrieveConfigurationWizardCustomization())
-
-        // === 1) INICIALIZAÇÃO (escolha a variante que aparecer no autocomplete) ===
-        // A)
-        // FaceTecSDK.initializeInDevelopmentMode(this, Config.DeviceKeyIdentifier) { status -> ... }
-        // B)
-        // FaceTecSDK.initializeInProductionMode(this, Config.DeviceKeyIdentifier, Config.ProductionKeyText) { status -> ... }
-        // C)
-        // FaceTecSDK.initialize(this, Config.DeviceKeyIdentifier, Config.ProductionKeyText) { status -> ... }
-
-        // Exemplo usando a (A) – troque pelos nomes do seu AAR:
-        FaceTecSDK.initializeInDevelopmentMode(this, Config.DeviceKeyIdentifier) { status ->
-            // Se sua callback não tem 'isCompletelyInitialized', teste pelo enum/constante que aparecer.
-            // Ex.: if (status.isSuccessful) { ... } ou if (status == FaceTecSDK.Status.OK) { ... }
-            // Use o autocomplete no 'status.' para ver o que existe.
-
-            // === 2) PEGAR A INSTÂNCIA ===
-            // Troque 'create' pelo método que seu AAR expõe (create/newInstance/constructor).
-            sdkInstance = FaceTecSDK.create(this@MainActivity)
-        }
-
         setContent {
             SafeIDMatchDemoTheme {
                 Scaffold(Modifier.fillMaxSize()) { inner ->
-                    Box(Modifier.fillMaxSize().padding(inner), contentAlignment = Alignment.Center) {
-                        Button(onClick = {
-                            if (!ensureCameraPermission()) return@Button
-                            val sdk = sdkInstance ?: run {
-                                Toast.makeText(this@MainActivity, "SDK ainda inicializando…", Toast.LENGTH_SHORT).show()
-                                return@Button
-                            }
-                            // === 3) MATCH FACE TO ID ===
-                            sdk.start3DLivenessThen3D2DPhotoIDMatch(
-                                this@MainActivity,
-                                SessionRequestProcessor()
-                            )
-                        }) { Text("Match Face to ID") }
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(inner)
+                            .padding(24.dp),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Button(
+                            onClick = {
+                                if (!ensureCameraPermission()) return@Button
+                                startMatchFaceToID()
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Match Face to ID")
+                        }
+
+                        Spacer(Modifier.height(16.dp))
+
+                        Button(
+                            onClick = {
+                                startActivity(Intent(this@MainActivity, PassportNfcActivity::class.java))
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Read Passport NFC")
+                        }
                     }
                 }
             }
         }
-    }
-
-    private fun ensureCameraPermission(): Boolean {
-        val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
-        if (!granted) ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), 1001)
-        return granted
     }
 }

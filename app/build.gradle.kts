@@ -40,6 +40,14 @@ android {
 }
 
 dependencies {
+    // JMRTD + Scuba (NFC / smartcards)
+    implementation("org.jmrtd:jmrtd:0.7.35")
+    implementation("net.sf.scuba:scuba-sc-android:0.0.23")
+
+    // BouncyCastle para criptografia (use uma dessas versões; se já tiver, mantenha a sua)
+    implementation("org.bouncycastle:bcprov-jdk15to18:1.76")
+    // ou: implementation("org.bouncycastle:bcprov-jdk15on:1.70")
+
     // AAR local
     implementation(files("libs/facetec-sdk-10.0.9.aar"))
 
