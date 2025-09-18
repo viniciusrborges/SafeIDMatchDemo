@@ -24,6 +24,8 @@ class PassportDataActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         val data = Bundle().apply { putAll(intent.extras) }
+        // Obs: usaremos a mesma chave "photoJpeg" mesmo quando vier PNG da API — o BitmapFactory
+        // entende ambos (PNG/JPEG).
         val photoBytes = intent.getByteArrayExtra("photoJpeg")
 
         setContent {
@@ -61,8 +63,7 @@ private fun PassportDataContent(
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-
-        // Foto do passaporte (DG2) se veio em JPEG
+        // Foto (pode ser JPEG vindo do chip OU PNG/JPEG vindo da API)
         if (photoBytes != null) {
             val bmp = remember(photoBytes) { BitmapFactory.decodeByteArray(photoBytes, 0, photoBytes.size) }
             if (bmp != null) {
@@ -70,15 +71,16 @@ private fun PassportDataContent(
                     bitmap = bmp.asImageBitmap(),
                     contentDescription = "Passport photo",
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(220.dp),
-                    contentScale = ContentScale.Crop
+                        .fillMaxWidth(0.7f)             // ocupa só 70% da largura da tela
+                        .wrapContentHeight()            // mantém a proporção (sem crop)
+                        .padding(bottom = 16.dp),
+                    contentScale = ContentScale.FillWidth
                 )
             } else {
                 Text("Não foi possível decodificar a foto (bytes inválidos).")
             }
         } else {
-            Text("Foto do passaporte não disponível (possível JPEG-2000).")
+            Text("Foto do passaporte não disponível.")
         }
 
         Text("Surname: $surname")

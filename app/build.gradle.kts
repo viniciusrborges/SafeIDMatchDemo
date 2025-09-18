@@ -40,6 +40,10 @@ android {
 }
 
 dependencies {
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    // (Compose já puxa lifecycle-ktx normalmente; se faltar)
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
+
     // --- NFC / eMRTD ---
     implementation("org.jmrtd:jmrtd:0.7.35") {
         exclude(group = "org.bouncycastle")   // remove bcprov/bcpkix transitivos
@@ -61,7 +65,8 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
 
     // Rede / JSON (iguais ao sample)
-    implementation("com.squareup.okhttp3:okhttp:3.12.13")
+    //implementation("com.squareup.okhttp3:okhttp:3.12.13")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okio:okio:1.15.0")
     implementation("com.google.code.gson:gson:2.10")
 
@@ -80,16 +85,4 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
-}
-
-android {
-    packaging {
-        resources {
-            excludes += "/META-INF/DEPENDENCIES"
-            excludes += "/META-INF/NOTICE"
-            excludes += "/META-INF/LICENSE"
-            excludes += "/META-INF/LICENSE.txt"
-            excludes += "/META-INF/NOTICE.txt"
-        }
-    }
 }

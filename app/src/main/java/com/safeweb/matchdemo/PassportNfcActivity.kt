@@ -5,34 +5,54 @@ import android.nfc.NfcAdapter
 import android.nfc.Tag
 import android.nfc.tech.IsoDep
 import android.os.Bundle
+import android.util.Base64
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import net.sf.scuba.smartcards.IsoDepCardService
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.jmrtd.BACKey
 import org.jmrtd.PassportService
 import org.jmrtd.lds.icao.DG1File
 import org.jmrtd.lds.icao.DG2File
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
+import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalMaterial3Api::class)
 class PassportNfcActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
 
     private var nfcAdapter: NfcAdapter? = null
 
-    // estados da UI
+    // UI state
     private var docNumber by mutableStateOf("")
     private var dob by mutableStateOf("")   // YYMMDD
     private var doe by mutableStateOf("")   // YYMMDD
     private var status by mutableStateOf("Informe os dados e aproxime o passaporte na antena NFC.")
+
+    // >>> Ajuste esta URL para a sua rota real (case-insensitive no ASP.NET Core).
+    // Pelo seu controller: [Route("api/[controller]")] + "decode-base64"  =>  .../api/JP2Decoder/decode-base64
+    private val JP2_DECODER_URL = "https://api.ovvo.com.br/safeid/api/JP2Decoder/decode-base64"
+
+    // OkHttp reutilizável
+    private val http by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(20, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .build()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -93,35 +113,49 @@ class PassportNfcActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
             return
         }
 
-        try {
-            val isoDep = IsoDep.get(tag) ?: throw IllegalStateException("Tag não é IsoDep")
-            isoDep.connect()
-            status = "Conectado. Autenticando..."
+        // Fazemos tudo em background (coroutine IO)
+        lifecycleScope.launchWhenResumed {
+            withContext(Dispatchers.Main) { status = "Conectando..." }
+            try {
+                val isoDep = IsoDep.get(tag) ?: throw IllegalStateException("Tag não é IsoDep")
+                isoDep.connect()
 
-            // leitura (DG1 + DG2)
-            val result = readPassportIsoDep(isoDep, docNumber.trim(), dob.trim(), doe.trim())
-            val info = result.info
-            val photo = result.photoJpeg
-
-            runOnUiThread {
-                val it = Intent(this, PassportDataActivity::class.java).apply {
-                    putExtra("surname", info.surname)
-                    putExtra("givenNames", info.givenNames)
-                    putExtra("docNumber", info.docNumber)
-                    putExtra("nationality", info.nationality)
-                    putExtra("dob", info.dateOfBirth)
-                    putExtra("doe", info.dateOfExpiry)
-                    putExtra("sex", info.sex)
-                    putExtra("issuingState", info.issuingState)
-                    if (photo != null) putExtra("photoJpeg", photo)
+                val read = withContext(Dispatchers.IO) {
+                    readPassportIsoDep(isoDep, docNumber.trim(), dob.trim(), doe.trim())
                 }
-                startActivity(it)
-            }
-            isoDep.close()
-        } catch (t: Throwable) {
-            runOnUiThread {
-                status = "Erro: ${t.message ?: t.javaClass.simpleName}"
-                Toast.makeText(this, status, Toast.LENGTH_LONG).show()
+
+                // Se não veio JPEG mas veio JP2 → pedir à API para converter (retorna PNG/JPEG)
+                val photoBytes: ByteArray? = when {
+                    read.photoJpeg != null -> read.photoJpeg
+                    read.photoJp2 != null -> {
+                        withContext(Dispatchers.Main) { status = "Convertendo foto (JP2 → PNG)..." }
+                        decodeJp2Remote(read.photoJp2)
+                    }
+                    else -> null
+                }
+
+                withContext(Dispatchers.Main) {
+                    val it = Intent(this@PassportNfcActivity, PassportDataActivity::class.java).apply {
+                        putExtra("surname", read.info.surname)
+                        putExtra("givenNames", read.info.givenNames)
+                        putExtra("docNumber", read.info.docNumber)
+                        putExtra("nationality", read.info.nationality)
+                        putExtra("dob", read.info.dateOfBirth)
+                        putExtra("doe", read.info.dateOfExpiry)
+                        putExtra("sex", read.info.sex)
+                        putExtra("issuingState", read.info.issuingState)
+                        if (photoBytes != null) putExtra("photoJpeg", photoBytes)
+                    }
+                    startActivity(it)
+                    status = "Leitura concluída."
+                }
+
+                isoDep.close()
+            } catch (t: Throwable) {
+                withContext(Dispatchers.Main) {
+                    status = "Erro: ${t.message ?: t.javaClass.simpleName}"
+                    Toast.makeText(this@PassportNfcActivity, status, Toast.LENGTH_LONG).show()
+                }
             }
         }
     }
@@ -164,26 +198,56 @@ class PassportNfcActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
             issuingState = mrz.issuingState
         )
 
-        // DG2 (foto do rosto) – preferimos JPEG; se vier JP2, deixamos nulo por enquanto.
+        // DG2 (foto do rosto): preferimos JPEG; se vier JP2 guardamos para a API
         var jpegPhotoBytes: ByteArray? = null
+        var jp2PhotoBytes: ByteArray? = null
+
         try {
             val dg2In: InputStream = service.getInputStream(PassportService.EF_DG2)
             val dg2 = DG2File(dg2In)
-            search@ for (fi in dg2.faceInfos) {
+            outer@ for (fi in dg2.faceInfos) {
                 for (img in fi.faceImageInfos) {
                     val mime = (img.mimeType ?: "").lowercase()
-                    val isJpeg = mime.contains("jpeg") || mime.contains("jpg")
-                    if (isJpeg) {
-                        jpegPhotoBytes = img.imageInputStream.readAllBytesCompat()
-                        break@search
+                    when {
+                        mime.contains("jpeg") || mime.contains("jpg") -> {
+                            jpegPhotoBytes = img.imageInputStream.readAllBytesCompat()
+                            break@outer
+                        }
+                        mime.contains("jp2") || mime.contains("jpeg2000") || mime.contains("j2k") -> {
+                            jp2PhotoBytes = img.imageInputStream.readAllBytesCompat()
+                            // continua o loop para ver se existe também uma cópia em JPEG;
+                            // se não houver, usaremos o JP2 com a API
+                        }
                     }
                 }
             }
         } catch (_: Throwable) {
-            // DG2 ausente ou foto em JPEG2000 (não suportado nativamente no Android)
+            // DG2 ausente ou erro de leitura
         }
 
-        return PassportReadResult(info = info, photoJpeg = jpegPhotoBytes)
+        return PassportReadResult(info = info, photoJpeg = jpegPhotoBytes, photoJp2 = jp2PhotoBytes)
+    }
+
+    // --- Chamada à sua API para converter JP2 em PNG/JPEG ---
+    private suspend fun decodeJp2Remote(jp2Bytes: ByteArray): ByteArray? = withContext(Dispatchers.IO) {
+        // Corpo JSON do seu endpoint DecodeBase64: { "Jp2Base64": "...", "OutputFormat": "png" }
+        val json = """
+            {
+              "Jp2Base64": "${Base64.encodeToString(jp2Bytes, Base64.NO_WRAP)}",
+              "OutputFormat": "png"
+            }
+        """.trimIndent()
+
+        val body: RequestBody = json.toRequestBody("application/json; charset=utf-8".toMediaType())
+        val req = Request.Builder()
+            .url(JP2_DECODER_URL)
+            .post(body)
+            .build()
+
+        http.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) return@use null
+            return@use resp.body?.bytes()
+        }
     }
 
     private fun InputStream.readAllBytesCompat(): ByteArray {
@@ -212,5 +276,6 @@ data class PassportInfo(
 
 data class PassportReadResult(
     val info: PassportInfo,
-    val photoJpeg: ByteArray?
+    val photoJpeg: ByteArray?,
+    val photoJp2: ByteArray?
 )
