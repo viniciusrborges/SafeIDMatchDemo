@@ -1,0 +1,58 @@
+name: build-openjpeg-android
+
+on:
+  workflow_dispatch: {}
+  push:
+    paths:
+      - ".github/workflows/build-openjpeg.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        abi: [arm64-v8a, armeabi-v7a]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Android SDK + NDK + CMake
+        uses: android-actions/setup-android@v3
+        with:
+          packages: |
+            platform-tools
+            build-tools;34.0.0
+            ndk;26.1.10909125
+            cmake;3.22.1
+
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Fetch OpenJPEG
+        run: |
+          git clone --depth 1 --branch v2.5.2 https://github.com/uclouvain/openjpeg.git openjpeg
+
+      - name: Configure
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_LATEST_HOME }}
+        run: |
+          cmake -S openjpeg -B build-android-${{ matrix.abi }} -G Ninja \
+            -D CMAKE_BUILD_TYPE=Release \
+            -D CMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
+            -D ANDROID_ABI=${{ matrix.abi }} \
+            -D ANDROID_PLATFORM=android-21 \
+            -D BUILD_SHARED_LIBS=ON
+
+      - name: Build
+        run: cmake --build build-android-${{ matrix.abi }} --config Release -j 4
+
+      - name: Locate .so
+        id: findso
+        run: |
+          SO=$(find build-android-${{ matrix.abi }} -name "libopenjp2.so" | head -n 1)
+          echo "so=$SO" >> $GITHUB_OUTPUT
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libopenjp2-${{ matrix.abi }}
+          path: ${{ steps.findso.outputs.so }}
