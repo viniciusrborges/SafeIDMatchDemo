@@ -12,6 +12,9 @@ jobs:
     strategy:
       matrix:
         abi: [arm64-v8a, armeabi-v7a]
+    env:
+      NDK_VERSION: 26.1.10909125
+
     steps:
       - uses: actions/checkout@v4
 
@@ -21,34 +24,33 @@ jobs:
           packages: |
             platform-tools
             build-tools;34.0.0
-            ndk;26.1.10909125
+            ndk;${{ env.NDK_VERSION }}
             cmake;3.22.1
 
-      - name: Install Ninja
-        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: Set env + Ninja
+        run: |
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}" >> $GITHUB_ENV
+          sudo apt-get update && sudo apt-get install -y ninja-build
 
       - name: Fetch OpenJPEG
-        run: |
-          git clone --depth 1 --branch v2.5.2 https://github.com/uclouvain/openjpeg.git openjpeg
+        run: git clone --depth 1 --branch v2.5.2 https://github.com/uclouvain/openjpeg.git openjpeg
 
-      - name: Configure
-        env:
-          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_LATEST_HOME }}
+      - name: Configure (${{ matrix.abi }})
         run: |
-          cmake -S openjpeg -B build-android-${{ matrix.abi }} -G Ninja \
+          cmake -S openjpeg -B build-${{ matrix.abi }} -G Ninja \
             -D CMAKE_BUILD_TYPE=Release \
             -D CMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
             -D ANDROID_ABI=${{ matrix.abi }} \
             -D ANDROID_PLATFORM=android-21 \
             -D BUILD_SHARED_LIBS=ON
 
-      - name: Build
-        run: cmake --build build-android-${{ matrix.abi }} --config Release -j 4
+      - name: Build (${{ matrix.abi }})
+        run: cmake --build build-${{ matrix.abi }} --config Release -j 4
 
       - name: Locate .so
         id: findso
         run: |
-          SO=$(find build-android-${{ matrix.abi }} -name "libopenjp2.so" | head -n 1)
+          SO=$(find build-${{ matrix.abi }} -name "libopenjp2.so" | head -n 1)
           echo "so=$SO" >> $GITHUB_OUTPUT
 
       - name: Upload artifact
