@@ -14,12 +14,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import androidx.compose.material3.ExperimentalMaterial3Api
 import net.sf.scuba.smartcards.IsoDepCardService
 import org.jmrtd.BACKey
 import org.jmrtd.PassportService
 import org.jmrtd.lds.icao.DG1File
+import org.jmrtd.lds.icao.DG2File
+import java.io.ByteArrayOutputStream
 import java.io.InputStream
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -38,9 +39,7 @@ class PassportNfcActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
         nfcAdapter = NfcAdapter.getDefaultAdapter(this)
 
         setContent {
-            Scaffold(
-                topBar = { CenterAlignedTopAppBar(title = { Text("Read Passport NFC") }) }
-            ) { inner ->
+            Scaffold(topBar = { CenterAlignedTopAppBar(title = { Text("Read Passport NFC") }) }) { inner ->
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -61,13 +60,12 @@ class PassportNfcActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                         label = { Text("Date of Expiry (YYMMDD)") }, singleLine = true, modifier = Modifier.fillMaxWidth()
                     )
 
-                    Text(
-                        text = status,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-
+                    Text(text = status, style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(8.dp))
-                    Text("Encoste a página da foto (onde fica o chip) na parte de trás do telefone.", style = MaterialTheme.typography.labelMedium)
+                    Text(
+                        "Encoste a página da foto (onde fica o chip) na parte de trás do telefone.",
+                        style = MaterialTheme.typography.labelMedium
+                    )
                 }
             }
         }
@@ -75,15 +73,11 @@ class PassportNfcActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
 
     override fun onResume() {
         super.onResume()
-        if (nfcAdapter == null) {
-            status = "NFC não disponível neste dispositivo."
-            return
-        }
-        // Reader Mode: não precisa de intent-filter
+        val a = nfcAdapter ?: run { status = "NFC não disponível neste dispositivo."; return }
         val flags = NfcAdapter.FLAG_READER_NFC_A or
                 NfcAdapter.FLAG_READER_NFC_B or
                 NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK
-        nfcAdapter?.enableReaderMode(this, this, flags, null)
+        a.enableReaderMode(this, this, flags, null)
     }
 
     override fun onPause() {
@@ -93,7 +87,9 @@ class PassportNfcActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
 
     override fun onTagDiscovered(tag: Tag) {
         if (docNumber.isBlank() || dob.length != 6 || doe.length != 6) {
-            runOnUiThread { Toast.makeText(this, "Preencha número, DOB e DOE (YYMMDD).", Toast.LENGTH_LONG).show() }
+            runOnUiThread {
+                Toast.makeText(this, "Preencha número, DOB e DOE (YYMMDD).", Toast.LENGTH_LONG).show()
+            }
             return
         }
 
@@ -102,10 +98,11 @@ class PassportNfcActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
             isoDep.connect()
             status = "Conectado. Autenticando..."
 
-            // Leitura em thread separada
-            val info = readPassportIsoDep(isoDep, docNumber.trim(), dob.trim(), doe.trim())
+            // leitura (DG1 + DG2)
+            val result = readPassportIsoDep(isoDep, docNumber.trim(), dob.trim(), doe.trim())
+            val info = result.info
+            val photo = result.photoJpeg
 
-            // Abre a tela de dados
             runOnUiThread {
                 val it = Intent(this, PassportDataActivity::class.java).apply {
                     putExtra("surname", info.surname)
@@ -116,6 +113,7 @@ class PassportNfcActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                     putExtra("doe", info.dateOfExpiry)
                     putExtra("sex", info.sex)
                     putExtra("issuingState", info.issuingState)
+                    if (photo != null) putExtra("photoJpeg", photo)
                 }
                 startActivity(it)
             }
@@ -128,14 +126,13 @@ class PassportNfcActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
         }
     }
 
-    // --- leitura DG1 via JMRTD ---
+    // --- leitura DG1 + DG2 via JMRTD ---
     private fun readPassportIsoDep(
         isoDep: IsoDep,
         documentNumber: String,
         dateOfBirthYYMMDD: String,
         dateOfExpiryYYMMDD: String
-    ): PassportInfo {
-        // Adapter IsoDep -> CardService
+    ): PassportReadResult {
         val cardService = IsoDepCardService(isoDep)
         val service = PassportService(
             cardService,
@@ -147,7 +144,7 @@ class PassportNfcActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
         service.open()
         service.sendSelectApplet(false)
 
-        // BAC
+        // BAC (derivado da MRZ)
         val bacKey = BACKey(documentNumber, dateOfBirthYYMMDD, dateOfExpiryYYMMDD)
         service.doBAC(bacKey)
 
@@ -156,7 +153,7 @@ class PassportNfcActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
         val dg1 = DG1File(dg1In)
         val mrz = dg1.mrzInfo
 
-        return PassportInfo(
+        val info = PassportInfo(
             surname = mrz.primaryIdentifier.replace("<", " ").trim(),
             givenNames = mrz.secondaryIdentifier.replace("<", " ").trim(),
             docNumber = mrz.documentNumber,
@@ -166,10 +163,42 @@ class PassportNfcActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
             sex = mrz.gender.toString(),
             issuingState = mrz.issuingState
         )
+
+        // DG2 (foto do rosto) – preferimos JPEG; se vier JP2, deixamos nulo por enquanto.
+        var jpegPhotoBytes: ByteArray? = null
+        try {
+            val dg2In: InputStream = service.getInputStream(PassportService.EF_DG2)
+            val dg2 = DG2File(dg2In)
+            search@ for (fi in dg2.faceInfos) {
+                for (img in fi.faceImageInfos) {
+                    val mime = (img.mimeType ?: "").lowercase()
+                    val isJpeg = mime.contains("jpeg") || mime.contains("jpg")
+                    if (isJpeg) {
+                        jpegPhotoBytes = img.imageInputStream.readAllBytesCompat()
+                        break@search
+                    }
+                }
+            }
+        } catch (_: Throwable) {
+            // DG2 ausente ou foto em JPEG2000 (não suportado nativamente no Android)
+        }
+
+        return PassportReadResult(info = info, photoJpeg = jpegPhotoBytes)
+    }
+
+    private fun InputStream.readAllBytesCompat(): ByteArray {
+        val out = ByteArrayOutputStream()
+        val buf = ByteArray(16 * 1024)
+        while (true) {
+            val r = this.read(buf)
+            if (r <= 0) break
+            out.write(buf, 0, r)
+        }
+        return out.toByteArray()
     }
 }
 
-// DTO simples para trafegar dados
+// DTOs
 data class PassportInfo(
     val surname: String,
     val givenNames: String,
@@ -179,4 +208,9 @@ data class PassportInfo(
     val dateOfExpiry: String,
     val sex: String,
     val issuingState: String
+)
+
+data class PassportReadResult(
+    val info: PassportInfo,
+    val photoJpeg: ByteArray?
 )
