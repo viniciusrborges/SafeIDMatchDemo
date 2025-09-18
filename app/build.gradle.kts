@@ -40,13 +40,18 @@ android {
 }
 
 dependencies {
-    // JMRTD + Scuba (NFC / smartcards)
-    implementation("org.jmrtd:jmrtd:0.7.35")
-    implementation("net.sf.scuba:scuba-sc-android:0.0.23")
+    // --- NFC / eMRTD ---
+    implementation("org.jmrtd:jmrtd:0.7.35") {
+        exclude(group = "org.bouncycastle")   // remove bcprov/bcpkix transitivos
+    }
+    implementation("net.sf.scuba:scuba-sc-android:0.0.23") {
+        exclude(group = "org.bouncycastle")   // idem
+    }
 
-    // BouncyCastle para criptografia (use uma dessas versões; se já tiver, mantenha a sua)
+    // --- BouncyCastle: padronize em UMA versão ---
     implementation("org.bouncycastle:bcprov-jdk15to18:1.76")
-    // ou: implementation("org.bouncycastle:bcprov-jdk15on:1.70")
+    implementation("org.bouncycastle:bcpkix-jdk15to18:1.76")
+    implementation("org.bouncycastle:bcutil-jdk15to18:1.76") // algumas builds do JMRTD usam
 
     // AAR local
     implementation(files("libs/facetec-sdk-10.0.9.aar"))
