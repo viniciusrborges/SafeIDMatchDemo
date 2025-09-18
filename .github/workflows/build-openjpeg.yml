@@ -11,18 +11,18 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        abi: [arm64-v8a, armeabi-v7a]
+        abi: [arm64-v8a, armeabi-v7a]   # pode remover armeabi-v7a se não precisar
     env:
       NDK_VERSION: 26.1.10909125
 
     steps:
       - uses: actions/checkout@v4
 
+      # Instala só o que precisamos para NDK build (sem platform-tools)
       - name: Install Android SDK + NDK + CMake
         uses: android-actions/setup-android@v3
         with:
           packages: |
-            platform-tools
             build-tools;34.0.0
             ndk;${{ env.NDK_VERSION }}
             cmake;3.22.1
