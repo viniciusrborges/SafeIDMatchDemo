@@ -11,20 +11,17 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        abi: [arm64-v8a, armeabi-v7a]   # se quiser rápido, deixe só arm64-v8a
-
+        abi: [arm64-v8a, armeabi-v7a]   # pode deixar só arm64-v8a se quiser
     steps:
       - uses: actions/checkout@v4
 
-      # Instala apenas o NDK (sem sdkmanager)
       - name: Setup NDK
         id: setup-ndk
         uses: nttld/setup-ndk@v1
         with:
-          ndk-version: r26d          # = 26.1.10909125
+          ndk-version: r26d
           add-to-path: false
 
-      # CMake e Ninja do sistema
       - name: Install CMake + Ninja
         run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
 
@@ -49,8 +46,27 @@ jobs:
           SO=$(find build-${{ matrix.abi }} -name "libopenjp2.so" | head -n 1)
           echo "so=$SO" >> $GITHUB_OUTPUT
 
-      - name: Upload artifact
+      - name: Upload lib (.so)
         uses: actions/upload-artifact@v4
         with:
           name: libopenjp2-${{ matrix.abi }}
           path: ${{ steps.findso.outputs.so }}
+
+      # === NOVO: empacota headers ===
+      - name: Package headers
+        run: |
+          mkdir -p dist/include/openjpeg
+          # headers "fontes" do repo
+          cp -R openjpeg/src/lib/openjp2/*.h dist/include/openjpeg/ || true
+          # opj_config.h GERADO pela config (precisa desse!)
+          if [ -f build-${{ matrix.abi }}/src/lib/openjp2/opj_config.h ]; then
+            cp build-${{ matrix.abi }}/src/lib/openjp2/opj_config.h dist/include/openjpeg/
+          fi
+          # Faz um zip pra baixar de uma vez
+          (cd dist && zip -r openjpeg-headers.zip include)
+
+      - name: Upload headers
+        uses: actions/upload-artifact@v4
+        with:
+          name: openjpeg-headers-${{ matrix.abi }}
+          path: dist/openjpeg-headers.zip
